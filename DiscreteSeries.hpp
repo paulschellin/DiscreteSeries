@@ -11,6 +11,7 @@
 #include <iterator>
 
 #include <boost/range.hpp>
+#include <boost/range/algorithm/transform.hpp>
 
 #include <boost/operators.hpp>
 
@@ -171,11 +172,6 @@ namespace PS {
 
 	template<typename T1 = double, typename T2 = T1>
 	class FakeInterpolator {
-	private:
-		
-		
-
-	
 	public:
 	
 		FakeInterpolator (void) {}
@@ -191,7 +187,7 @@ namespace PS {
 		T2
 		eval (const T1 input)
 		{
-			
+			return T2(input);
 		}
 
 
@@ -235,8 +231,10 @@ template< template<typename... /*T1*/> class ContainerDomainT
 
 		typedef DiscreteSeries DSeriesT;
 		
-		typedef typename codomain_container_type::value_type			value_type;
+		//typedef typename codomain_container_type::value_type			value_type;
 		
+		typedef std::pair <domain_type, codomain_type>		value_type;
+
 		typedef typename codomain_container_type::reference 			reference;
 		typedef typename codomain_container_type::const_reference	const_reference;
 
