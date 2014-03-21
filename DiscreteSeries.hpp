@@ -1,5 +1,25 @@
 #ifndef DISCRETESERIES_HPP
 #define DISCRETESERIES_HPP 1
+#pragma once
+
+/*
+	For the redesigned DiscreteSeries class, a few changes will be made:
+		
+		[ ]	There won't be any iterators defined specifically for the class (no benefit)
+		
+		[ ]	No preprocessor macros will be used for optional compile-time things (too messy)
+		[ ]	The template parameters will be simply typenames, not nested templates.
+
+		[ ] Sampling rate most likely does not belong as a separate object, if multiple domain dimensions are to be allowed.
+
+		[ ]	Delegate constructors will be used to limit annoying boilerplate code.
+
+		[ ] pair iterator
+
+		[ ] ostream_iterator
+
+
+ */
 
 #include <iostream>
 #include <vector>
@@ -10,764 +30,686 @@
 #include <cmath>
 #include <iterator>
 
+#include <exception>
+#include <stdexcept>
+
 #include <boost/range.hpp>
-#include <boost/range/algorithm/transform.hpp>
+#include <boost/range/algorithm.hpp>
+#include <boost/range/algorithm_ext.hpp>
+#include <boost/tuple/tuple.hpp>
+#include <boost/tuple/tuple_io.hpp>
+#include <boost/iterator/zip_iterator.hpp>
+
 
 #include <boost/operators.hpp>
 
-//#include <inplace_transform/inplace_transform.hpp>
-
-#define DISCRETESERIES_INTERPOLATION 1
-
-#ifdef DISCRETESERIES_INTERPOLATION
-	//#include <GSLInterpolationExtension/CubicInterpFunc.hpp>
-#endif
-
-//	Options (define preprocessor macros to enable the following):
-//	DISCRETESERIES_INTERPOLATION	Enables interpolation. (currently broken)
-//	DISCRETESERIES_BOOST_UNITS		Use boost::units. Not yet implemented.
-
-
-/******************************************************************************
- *	Due to the unpredictable availability of C++11 support, during			  *
- *	compilation the preprocessor macro "__cplusplus" is checked to see if the *
- *	compiler supports the C++11 standard library. If __cplusplus > 199711L,   *
- *	the compiler supports C++11 and so the standard library is used. 		  *
- *	Otherwise, the equivalent Boost libraries are required.					  *
- *																			  *
- *	To force the use of the Boost libraries regardless of C++11 compiler 	  *
- *	support, define the "DISCRETESERIES_USE_BOOST_LIBS" preprocessor macro at *
- *	compile time by passing -DDISCRETESERIES_USE_BOOST_LIBS as a flag to	  *
- *	the compiler's invocation.												  *
- *****************************************************************************/
-
-
-//#define DISCRETESERIES_USE_STD_FUNCTION 1
-#define DISCRETESERIES_USE_BOOST_FUNCTION 1
-
-#ifdef DISCRETESERIES_USE_BOOST_FUNCTION
-#include <boost/function.hpp>
-#endif
-
-
-#define DISCRETESERIES_USE_BOOST_SERIALIZE 1
-
-#ifdef DISCRETESERIES_USE_BOOST_SERIALIZE
-
-	#include <boost/archive/text_oarchive.hpp>
-	#include <boost/archive/text_iarchive.hpp>
-	#include <boost/serialization/version.hpp>
-	#include <boost/serialization/vector.hpp>
-	#include <boost/serialization/string.hpp>
-	#include <boost/archive/xml_oarchive.hpp>
-	#include <boost/archive/xml_iarchive.hpp>
-	#include <boost/serialization/nvp.hpp>
-	#include <boost/serialization/utility.hpp>
-
-
-#endif
-
 namespace PS {
-	using std::cout;
-	using std::endl;
-	using std::vector;
-	using std::complex;
+
+	using ::boost::tuples::operator<<;
+
+
+	//template <typename T1 = double, typename T2 = T1>
 	
-	//using std::bind;
-	using std::transform;
-	using std::accumulate;
-	using std::inner_product;
-	using std::generate_n;
-	using std::for_each;
-	//using namespace std::placeholders;
-	
-	#ifdef DISCRETESERIES_USE_STD_FUNCTION
-		using std::function;
-	#elif defined (DISCRETESERIES_USE_BOOST_FUNCTION)
-		using ::boost::function;
-	#endif
-	
-	//	In order to allow complex functions to return both complex and real
-	//	values, we must define the complex operators for real values.
-	//	But we probably don't need them anyway.
-	/*
-	double real (const double input) { return input; }
-	double imag (const double input) { return 0.; }
-	double abs (const double input) { return input; }
-	double arg (const double input) { return 0.; }
-	double norm (const double input) { return input * input; }
-	double conj (const double input) { return input; }
-	//	??? polar()	???
-	*/
-	
-#ifdef DISCRETESERIES_CUSTOM_ITERATORS
-	
-	template<class Item, int N>
-	class DiscreteSeriesIterator
-		: public std::iterator<std::output_iterator_tag,	//	Category
-								Item,						//	value_type
-								ptrdiff_t,					//	difference_type
-								Item*,						//	pointer
-								Item&						//	reference
-		> {
-			
-			pointer itemPtr_;
+	template <typename SinglePassRange1, typename SinglePassRange2 = SinglePassRange1>
+	class PlaceholderInterpolator {
 		public:
-			
-			DiscreteSeriesIterator(pointer toCopy)
-				: itemPtr_(toCopy)
+			typedef typename std::iterator_traits< typename SinglePassRange1::iterator >::value_type	T1;
+			typedef typename std::iterator_traits< typename SinglePassRange2::iterator >::value_type	T2;
+		
+			PlaceholderInterpolator (void) {}
+
+			PlaceholderInterpolator (const SinglePassRange1& /*rng1*/, const SinglePassRange2& /*rng2*/)
 			{ }
+
+			~PlaceholderInterpolator (void) {}
 			
-			DiscreteSeriesIterator(const DiscreteSeriesIterator& toCopy)
-				: itemPtr_(toCopy)
-			{ }
-			
-			
-			DiscreteSeriesIterator&
-			operator++(void)
+			T2
+			eval (const T1 input)
 			{
-				++itemPtr_;
-				return *this;
+				return T2(input);
 			}
-			
-			
-			DiscreteSeriesIterator
-			operator++(int)
+
+			T2
+			operator() (const T1 input)
 			{
-				DiscreteSeriesIterator tmp(*this);
-				operator++();
-				return tmp;
+				return eval(input);
 			}
-			
-			bool
-			operator==(const DiscreteSeriesIterator& rhs) const
-			{ return (itemPtr_ == rhs.itemPtr_); }
-			
-			bool
-			operator!=(const DiscreteSeriesIterator& rhs) const
-			{ return (itemPtr_ != rhs.itemPtr_); }
-			
-			reference
-			operator*(void)
-			{ return *itemPtr_; }
-			
-			const reference
-			operator*(void) const
-			{ return *static_cast<const pointer>(itemPtr_); }
-			
-			reference
-			operator->(void)
-			{ return *itemPtr_; }
-			
-			const reference
-			operator->(void) const
-			{ return *static_cast<const pointer>(itemPtr_); }
-	};
-	
-	
-#endif
-
-
-
-
-	template<typename T1 = double, typename T2 = T1>
-	class FakeInterpolator {
-	public:
-	
-		FakeInterpolator (void) {}
-
-		template<typename SinglePassRange1, typename SinglePassRange2>
-		FakeInterpolator (const SinglePassRange1& rng1, const SinglePassRange2& rng2)
-		{
-			
-		}
-
-		~FakeInterpolator (void) {}
-
-		T2
-		eval (const T1 input)
-		{
-			return T2(input);
-		}
-
-
-		T2
-		operator() (const T1 input)
-		{
-			return eval(input);
-		}
 	};
 
 
 
+	template <typename SinglePassRange1, typename SinglePassRange2 = SinglePassRange1>
+	class NaiveLinearInterpolator {
+		public:
+			typedef typename std::iterator_traits< typename SinglePassRange1::iterator >::value_type	T1;
+			typedef typename std::iterator_traits< typename SinglePassRange2::iterator >::value_type	T2;
+		
 
+			const SinglePassRange1 range_domain;
+			const SinglePassRange2 range_codomain;
+
+
+			NaiveLinearInterpolator (void) {}
+
+			//template <typename SinglePassRange1, typename SinglePassRange2>
+			NaiveLinearInterpolator (const SinglePassRange1& rng1, const SinglePassRange2& rng2)
+				: range_domain(rng1)
+				, range_codomain(rng2)
+			{ }
+
+
+			~NaiveLinearInterpolator (void) {}
+
+
+			T2
+			eval (const T1 input)
+			{
+				//	Check if input value is already equal to a bin
+				if (boost::find(range_domain, input) != range_domain.end()) {
+					return T2( input );
+				}
+
+				
+
+				//auto lower = boost::lower_bound (range_domain, [input](T1 x){std::less_equal<T1>(input, x);});
+				//auto upper = lower;
+				//boost::advance(upper, 1);
+
+				//auto upper = boost::upper_bound ();
+				
+
+				auto it1 = boost::adjacent_find(range_domain, [input](T1 x, T1 y){ return x <= input && input <= y; });
+
+
+				T1 domain_lower (*it1);
+				T1 domain_upper (*(it1+1));
+				T2 codomain_lower (*(boost::begin(range_codomain) + std::distance(boost::begin(range_domain), it1)));
+				T2 codomain_upper (*(boost::begin(range_codomain) + std::distance(boost::begin(range_domain), it1 + 1)));
+
+				return T2(codomain_lower + (input - domain_lower) * (codomain_upper - codomain_lower) / (domain_upper - domain_lower));
+			}
+
+
+			T2
+			operator() (const T1 input)
+			{
+				return eval(input);
+			}
+
+	};
+
+
+	template <typename ContainerT>
+	ContainerT
+	make_iota (std::size_t n, typename ContainerT::value_type x0, typename ContainerT::value_type delta_x = typename ContainerT::value_type(1))
+	{
+		ContainerT result (n, x0);
+		for (std::size_t i(1); i < n; ++i) {
+			result[i] = result[i-1] + delta_x;
+		}
+		return result;
+	}
 
 /*
-	Using partial template specialization, the template parameter of
-	std::complex<> can be known, since operators are overloaded 
- 
- */
+	template <typename ContainerT>
+	ContainerT
+	make_iota (ContainerT::value_type x_min, ContainerT::value_type x_max, ContainerT::value_type delta_x = ContainerT::value_type(1))
+	{
+		ContainerT result (n, x0);
+		for (std::size_t i(1); i < n; ++i) {
+			result[i] = result[i-1] + delta_x;
+		}
+		return result;
+	}
+*/
 
-template< template<typename... /*T1*/> class ContainerDomainT
-		, template<typename... /*T2*/> class ContainerCodomainT = ContainerDomainT
-		, typename T1 = double
-		, typename T2 = T1
-		, typename InterpT = FakeInterpolator<double> //CubicInterpFunc<T1, T2>
-		>
 
-	//template<typename Domain, typename Range, typename AllocD = std::allocator<Domain>, typename AllocR = std::allocator<Range> >
+
+	template< typename DomainT //= double
+			, typename CodomainT //= DomainT
+			, typename ContainerT1 //= std::vector
+			, typename ContainerT2 = ContainerT1
+			//, typename template<typename ...ArgsX1> class ContainerT1 //= std::vector
+			//, typename template<typename ...ArgsX2> class ContainerT2 //= ContainerT1
+			//, typename ...Args1
+			//, typename ...Args2
+			, typename InterpolatorT = PlaceholderInterpolator<ContainerT1, ContainerT2>
+			>
+
+	/*
+	template< typename ContainerDomainT
+			, typename ContainerCodomainT = ContainerDomainT
+			, typename InterpolatorT = PlaceholderInterpolator<ContainerDomainT, ContainerCodomainT>
+			>
+	*/
 	class DiscreteSeries
-		:	boost::arithmetic1 < DiscreteSeries<ContainerDomainT, ContainerCodomainT, T1, T2, InterpT>
-		,	boost::arithmetic2 < DiscreteSeries<ContainerDomainT, ContainerCodomainT, T1, T2, InterpT>, ContainerCodomainT<T2>
-		> >
+	/*
+		: boost::arithmetic1< DiscreteSeries<ContainerDomainT, ContainerCodomainT, InterpolatorT>
+		, boost::arithmetic2< DiscreteSeries<ContainerDomainT, ContainerCodomainT, InterpolatorT>, ContainerCodomainT>
+		>
+	 */
+	 	: boost::arithmetic1< DiscreteSeries< DomainT, CodomainT, ContainerT1, ContainerT2, InterpolatorT>
+		, boost::arithmetic2< DiscreteSeries< DomainT, CodomainT, ContainerT1, ContainerT2, InterpolatorT>
+							, ContainerT2 >
+		>
 	{
 	public:
 		
-		typedef ContainerDomainT<T1>	domain_container_type;
-		typedef ContainerCodomainT<T2> codomain_container_type;
+		typedef ContainerT1 ContainerDomainT;
+		typedef ContainerT2 ContainerCodomainT;
 
-		typedef typename domain_container_type::value_type	domain_type;
-		typedef typename codomain_container_type::value_type codomain_type;
+		/*
+		typedef ContainerT1<DomainT, Args1...>		ContainerDomainT;
+		typedef ContainerT2<CodomainT, Args2...>	ContainerCodomainT;
+		*/
 
-		typedef DiscreteSeries DSeriesT;
-		
-		//typedef typename codomain_container_type::value_type			value_type;
-		
+		typedef DomainT		domain_type;
+		typedef CodomainT	codomain_type;
+
+		typedef ContainerT2	container_type;
+
+
+
+		//typedef typename ContainerDomainT::value_type		domain_type;
+		//typedef typename ContainerCodomainT::value_type		codomain_type;
+
 		typedef std::pair <domain_type, codomain_type>		value_type;
 
-		typedef typename codomain_container_type::reference 			reference;
-		typedef typename codomain_container_type::const_reference	const_reference;
+		typedef typename container_type::reference			reference;
+		typedef typename container_type::const_reference		const_reference;
 
-		typedef typename codomain_container_type::pointer			pointer;
-		typedef typename codomain_container_type::const_pointer		const_pointer;
+		typedef typename container_type::pointer				pointer;
+		typedef typename container_type::const_pointer		const_pointer;
+
+		typedef typename container_type::iterator			iterator;
+		typedef typename container_type::const_iterator		const_iterator;
+
+		typedef typename container_type::reverse_iterator		reverse_iterator;
+		typedef typename container_type::const_reverse_iterator	const_reverse_iterator;
+
+		typedef typename container_type::difference_type		difference_type;
+		typedef typename container_type::size_type			size_type;
+
+
 		
-		typedef typename codomain_container_type::iterator			iterator;
-		typedef typename codomain_container_type::const_iterator		const_iterator;
+		//
+		//	Typedefs for the zip iterator (iteration by pairs)
+		//
+
+		typedef typename ContainerT1::iterator domain_iterator;
+		typedef typename ContainerT1::const_iterator domain_const_iterator;
+
+		typedef boost::tuple<domain_iterator, iterator> tuple_iterator;
+		typedef boost::tuple<domain_const_iterator, const_iterator> tuple_const_iterator;
+
+		typedef boost::zip_iterator<tuple_iterator> zipped_iterator;
+		typedef boost::zip_iterator<tuple_const_iterator> zipped_const_iterator;
+
+
+
+
+		//domain_type			samplingRate_;
+		ContainerDomainT	domainValues_;
+		ContainerCodomainT	codomainValues_;
+
+		InterpolatorT	interpFn_;
+
+
+		DiscreteSeries() = delete;
+
+
+		struct _NoInit{};
+
+		DiscreteSeries(std::size_t n)
+			: DiscreteSeries(ContainerDomainT(n), ContainerCodomainT(n))
+		{}
+
+		DiscreteSeries(std::size_t n, _NoInit)
+			: DiscreteSeries(ContainerDomainT(n), ContainerCodomainT(n))
+		{}
+
+		DiscreteSeries(std::size_t n, const domain_type samplingrate)		 
+			: DiscreteSeries(ContainerDomainT(make_iota<ContainerDomainT>(n, 0., 1./samplingrate)), ContainerCodomainT(n))
+		{}
 		
-		typedef typename codomain_container_type::reverse_iterator	reverse_iterator;
-		typedef typename codomain_container_type::const_reverse_iterator const_reverse_iterator;
-		
-		typedef typename codomain_container_type::difference_type	difference_type;
-		typedef typename codomain_container_type::size_type			size_type;
-		
+		DiscreteSeries(std::size_t n, const domain_type samplingrate, _NoInit)
+			: DiscreteSeries(ContainerDomainT(make_iota<ContainerDomainT>(n, 0., 1./samplingrate)), ContainerCodomainT(n))
+		{}
 
 
+		DiscreteSeries(const ContainerCodomainT& inR, const domain_type samplingrate)
+			: DiscreteSeries(ContainerDomainT(make_iota<ContainerDomainT>(inR.size(), 0., 1./samplingrate)), ContainerCodomainT(inR))
+		{}
 
-		domain_type		samplingRate_;
-		
-		domain_container_type	domainValues_;
-		codomain_container_type	codomainValues_;
-		
-
-		InterpT interpFn_;
-		//CubicInterpFunc<domain_type, codomain_type> interpFn_;
-
-
-	private:
-		
-		#ifdef DISCRETESERIES_USE_BOOST_SERIALIZE
-
-		friend class boost::serialization::access;
-		template <class Archive>
-		void
-		serialize(Archive& ar, const unsigned int /*version*/)
-		{
-			ar & BOOST_SERIALIZATION_NVP(samplingRate_)
-				& BOOST_SERIALIZATION_NVP(domainValues_)
-				& BOOST_SERIALIZATION_NVP(codomainValues_);
-		}
-
-		#endif
-
-
-	public:
-
-
-
-		DiscreteSeries (void)
-			: samplingRate_(0.)
-			, domainValues_(0)
-			, codomainValues_(0)
-			, interpFn_()
-		{
-			// Don't init the interpolation function since the length may change.
-			//initInterpFn();
-		}
-		
-		DiscreteSeries (unsigned length)
-			: samplingRate_(0.)
-			, domainValues_(length)
-			, codomainValues_(length)
-			, interpFn_()
-		{
-			initInterpFn();
-		}
-		
-		DiscreteSeries (const unsigned length, const domain_type samplingrate)
-			: samplingRate_(samplingrate)
-			, domainValues_(length)
-			, codomainValues_(length)
-			, interpFn_()
-		{
-			initInterpFn();
-		}
-		
-		DiscreteSeries (const domain_container_type& inD, const codomain_container_type& inR)
-			: samplingRate_(0.)
-			, domainValues_(inD)
+		DiscreteSeries(const ContainerDomainT& inD, const ContainerCodomainT& inR)
+			: domainValues_(inD)
 			, codomainValues_(inR)
-			, interpFn_()
+			, interpFn_(inD, inR)
 		{
-			initInterpFn();
-		}
-		
-		DiscreteSeries (const codomain_container_type& inR, const domain_type& samplingrate)
-			: samplingRate_(samplingrate)
-			, domainValues_(inR.size())
-			, domainValues_(make_transformed_sequence_iterator(domain_type(0), std::bind2nd(std::divides<domain_type>(), samplingrate)), make_transformed_sequence_iterator(domain_type(inR.size()), std::bind2nd(std::divides<domain_type>(), samplingrate)))
-			, codomainValues_(inR)
-			, interpFn_()
-		{
-			initInterpFn();
-		}
-		
-		DiscreteSeries (const DSeriesT& toCopy)
-			: samplingRate_(toCopy.samplingRate_)
-			, domainValues_(toCopy.domainValues_)
-			, codomainValues_(toCopy.codomainValues_)
-			, interpFn_()
-		{
-			initInterpFn();
-		}
-		
-		~DiscreteSeries (void)
-		{ }
-		
-		
-		
-		void
-		initInterpFn (void)
-		{
-			#ifdef DISCRETESERIES_INTERPOLATION
-			//interpFn_.setAndInit(domainValues_, codomainValues_);
-			#endif
-		}
-		
-		int
-		SetEvenCombSpacing (void)
-		{
-			for (unsigned i = 0; i < domainValues_.size(); ++i) {
-				domainValues_[i] = double(i) / samplingRate_;
+			if (!boost::is_sorted(domainValues_)) {
+				throw std::invalid_argument("DiscreteSeries: The domain array was not strictly increasing (interpolators require this)!");
 			}
-			return 0;
 		}
-		
-		size_type
-		size(void) const
-		{
-			return size_type (domainValues_.size());
-		}
-		
-		
-		iterator
-		begin(void)
-		{
-			return iterator(codomainValues_.begin());
-		}
-		
-		iterator
-		end(void)
-		{
-			return iterator(codomainValues_.end());
-		}
-		
-		const_iterator
-		begin(void) const
-		{
-			return const_iterator(codomainValues_.begin());
-		}
-		
-		const_iterator
-		end(void) const
-		{
-			return const_iterator(codomainValues_.end());
-		}
-		
-		const_iterator
-		cbegin(void) const
-		{
-			#ifndef DISCRETESERIES_USE_CBEGIN_CEND
-				return const_iterator(codomainValues_.begin());
-			#else
-				return const_iterator(codomainValues_.cbegin());
-			#endif
-		}
-		
-		const_iterator
-		cend(void) const
-		{
-			#ifndef DISCRETESERIES_USE_CBEGIN_CEND
-				return const_iterator(codomainValues_.end());
-			#else
-				return const_iterator(codomainValues_.cend());
-			#endif
-		}
-		
-		////////////////////////////////////////////////////////////////////////
-		//					Arithmetic Operator Overloads
-		////////////////////////////////////////////////////////////////////////
-		//	Because many of the operators upon the series will be with another
-		//	series over an identical domain, for the sake of performance there
-		//	are two versions of each operation: one for identical domains,
-		//	and one for non-identical domains.
-		//
-		//	Identical Domains:
-		//		Perform an element-wise operation on the DiscreteSeries object.
-		//
-		//	Different Domains:
-		//		The procedure is as follows:
-		//		1.	Find the minimum domain value of both *this/lhs and rhs.
-		//		2.	Find the maximum domain value of both *this/lhs and rhs.
-		//		3.	Determine the step size of total domain (Use minimum step
-		//				size or maximum??).
-		//		4.	Perform the operator over the new domain for the two ranges.
-		//		
-		//
-		////////////////////////////////////////////////////////////////////////
-		
-		DSeriesT&
-		operator+= (const DSeriesT& rhs)
-		{
-			if (DomainsEqual(rhs)) {
-				boost::transform(codomainValues_, rhs, codomainValues_.begin(), std::plus<codomain_type>());
-				//PS::inplace_transform(codomainValues_, rhs, std::plus<Range>());
-			} else {
-				CombineDomainsWith(rhs);
 
-				codomain_container_type copyOfOldRange (codomainValues_);
-				
-				codomainValues_.resize(domainValues_.size());
-				
-				#ifdef DISCRETESERIES_INTERPOLATION
-				for (unsigned i = 0; i < domainValues_.size(); ++i) {
-					codomainValues_[i] = codomainValues_.InterpValueAt(domainValues_[i]);
-					codomainValues_[i] += rhs.InterpValueAt(domainValues_[i]);
-				}
-				#endif
-			}
-			return *this;
-		}
-		
-		DSeriesT&
-		operator-= (const DSeriesT& rhs)
-		{
-			if (DomainsEqual(rhs)) {
-				boost::transform(codomainValues_, rhs, codomainValues_.begin(), std::minus<codomain_type>());
-			} else {
-				#ifdef DISCRETESERIES_INTERPOLATION
-				for (unsigned i = 0; i < domainValues_.size(); ++i) {
-					codomainValues_[i] -= rhs.InterpValueAt(domainValues_[i]);
-				}
-				#endif
-			}
-			return *this;
-		}
-		
-		DSeriesT&
-		operator*= (const DSeriesT& rhs)
-		{
-			if (DomainsEqual(rhs)) {
-				boost::transform(codomainValues_, rhs, codomainValues_.begin(), std::multiplies<codomain_type>());
-			} else {
-				#ifdef DISCRETESERIES_INTERPOLATION
-				for (unsigned i = 0; i < domainValues_.size(); ++i) {
-					codomainValues_[i] *= rhs.InterpValueAt(domainValues_[i]);
-				}
-				#endif
-			}
-			return *this;
-		}
-		
-		DSeriesT&
-		operator/= (const DSeriesT& rhs)
-		{
-			if (DomainsEqual(rhs)) {
-				boost::transform(codomainValues_, rhs, codomainValues_.begin(), std::divides<codomain_type>());
-			} else {
-				#ifdef DISCRETESERIES_INTERPOLATION
-				for (unsigned i = 0; i < domainValues_.size(); ++i) {
-					codomainValues_[i] /= rhs.InterpValueAt(domainValues_[i]);
-				}
-				#endif
-			}
-			return *this;
-		}
-		
-		DSeriesT&
-		operator+= (const codomain_type& rhs)
-		{
-			//PS::range::inplace_transform(codomainValues_, std::bind2nd(std::plus<Range>(), rhs));
-			for (unsigned i = 0; i < codomainValues_.size(); ++i) {
-				codomainValues_.at(i) += rhs;
-			}
-			return *this;
-		}
-		
-		DSeriesT&
-		operator-= (const codomain_type& rhs)
-		{
-			//PS::range::inplace_transform(codomainValues_, std::bind2nd(std::minus<Range>(), rhs));
-			for (unsigned i = 0; i < codomainValues_.size(); ++i) {
-				codomainValues_.at(i) -= rhs;
-			}
-			return *this;
-		}
-		
-		DSeriesT&
-		operator*= (const codomain_type& rhs)
-		{
-			//PS::range::inplace_transform(codomainValues_, std::bind2nd(std::multiplies<Range>(), rhs));
-			for (unsigned i = 0; i < codomainValues_.size(); ++i) {
-				codomainValues_.at(i) *= rhs;
-			}
-			return *this;
-		}
-		
-		DSeriesT&
-		operator/= (const codomain_type& rhs)
-		{
-			//PS::range::inplace_transform(codomainValues_, std::bind2nd(std::divides<Range>(), rhs));
-			for (unsigned i = 0; i < codomainValues_.size(); ++i) {
-				codomainValues_.at(i) /= rhs;
-			}
-			return *this;
-		}
-		
-		reference
-		operator[] (const size_type n)
-		{
-			return codomainValues_[n];
-		}
-		
-		const_reference
-		operator[] (const size_type n) const
-		{
-			return codomainValues_[n];
-		}
-		
-		reference
-		at(const size_type n)
-		{
-			return codomainValues_.at(n);
-		}
-		
-		const_reference
-		at(const size_type n) const
-		{
-			return codomainValues_.at(n);
-		}
-		
-		domain_type&
-		atDomain (const std::size_t n)
-		{
-			return (domainValues_.at(n));
-		}
-		
-		const domain_type&
-		atDomain (const std::size_t n) const
-		{
-			return (domainValues_.at(n));
-		}
-		
-#ifdef DISCRETESERIES_INTERPOLATION
-		codomain_type
-		InterpValueAt (const domain_type& x) const
-		{
-			return interpFn_.eval(x);
-		}
-		
-		codomain_container_type
-		InterpValues (const domain_container_type& xs) const
-		{
-			codomain_container_type result (xs.size());
-			boost::transform(xs, result.begin(), interpFn_);
-			return result;
-		}
-#endif
 
-		codomain_type&
-		operator() (const domain_type& x)
-		{
-			#ifdef DISCRETESERIES_INTERPOLATION
-				return InterpValueAt(x);
-			#else
-				return codomainValues_[unsigned(x)];
-			#endif
-		}
-		
-		const codomain_type&
-		operator() (const domain_type& x) const
-		{
-			#ifdef DISCRETESERIES_INTERPOLATION
-				return InterpValueAt(x);
-			#else
-				return codomainValues_[unsigned(x)];
-			#endif
-		}
-		
-		codomain_type&
-		normalize (const codomain_type normfactor)
-		{
-			codomainValues_ *= normfactor;
-			//for (unsigned i = 0; i < codomainValues_.size(); ++i) {
-			//	codomainValues_[i] *= normfactor;
-			//}
-			
-			//PS::inplace_transform(codomainValues_, std::bind2nd(std::divides<Range>(), normfactor));
-			return codomainValues_;
-		}
-		
-		bool
-		DomainsEqual (const DSeriesT& rhs) const
-		{
-			if ((domainValues_.size() != rhs.domainValues_.size()) && (samplingRate_ != rhs.samplingRate_)){
-				return false;
-			}
-			//return std::equal(domainValues_.begin(), domainValues_.end(), rhs.domainValues_.begin());
-			return boost::equal(domainValues_, rhs.domainValues_);
-		}
-		
-		
-		domain_container_type
-		GetCombinedDomain (const DSeriesT& lhs, const DSeriesT& rhs) const
-		{
-			//	Get the two domain sizes 
-			std::size_t lhsSize = lhs.size() - 1;
-			std::size_t rhsSize = rhs.size() - 1;
-			
-			domain_type domainMin = std::min(lhs.atDomain(0), rhs.atDomain(0));
-			domain_type domainMax = std::max(lhs.atDomain(lhsSize), rhs.atDomain(rhsSize));
-			
-			//	Get the sampling rate
-			//	???	- Should it be the minimum rate, the maximum rate, the least
-			//		common factor? Should an offset be included to prevent
-			//		issues where the minimum and maximum values are not
-			//		multiples of the sampling rate?
-			domain_type samplingRate = std::max(lhs.GetSamplingRate(), rhs.GetSamplingRate());
-			//Domain samplingRate = std::min(lhs.GetSamplingRate(), rhs.GetSamplingRate());
-			
-			std::size_t numSamples ((domainMax - domainMin) / samplingRate + 1);
-			
-			domain_container_type result (numSamples);
-			
-			for (std::size_t i = 0; i != numSamples; ++i) {
-				result[i] = domain_type(i) / samplingRate_;
-			}
-			
-			return result;
-		}
-		
-		void
-		CombineDomainsWith (const DSeriesT& rhs) const
-		{
-			domain_type domainMin = std::min(domainValues_.first(), rhs.domainValues_.first());
-			domain_type domainMax = std::max(domainValues_.last(), rhs.domainValues_.last());
-			
-			//	Get the sampling rate
-			samplingRate_ = std::max(GetSamplingRate(), rhs.GetSamplingRate());
-			
-			std::size_t numSamples ((domainMax - domainMin) / samplingRate_ + 1);
-			
-			domainValues_.resize(numSamples);
-			
-			for (std::size_t i = 0; i != numSamples; ++i) {
-				domainValues_[i] = domain_type(i) / samplingRate_;
-			}
-		}
-		
+		~DiscreteSeries(void) { }
+
+
+
+
+		//...
+
+
+
+		//
+		//	Iterators
+		//
 		/*
-		 vR& GetHilbertTransform(void) const {
-		 vR* result = new vR(codomainValues_.size());
-		 
-		 //	There are two ways to attempt this:
-		 //		1)	Doing a straightforward convolution, or
-		 //		2)	Using the convolution theorem to transform, multiply,
-		 //			then inverse-transform.
-		 
-		 //
-		 for (unsigned n = 0; n < codomainValues_.size(); ++n) {
-		 Range sum();
-		 
-		 for (unsigned m = 1; m < codomainValues_.size(); m+=2) {
-		 results += codomainValues_[n] * 2. / M_PI / m;
-		 }
-		 
-		 results
-		 }
-		 return *result;
-		 }
+			Consider writing using the free functions instead?
+			Also, should it expect cbegin and cend?
 		 */
-		
-		domain_type
-		GetSamplingRate (void) const
-		{
-			return samplingRate_;
+		iterator begin() { return codomainValues_.begin(); }
+		const_iterator begin() const { return codomainValues_.begin(); }
+
+		iterator end() { return codomainValues_.end(); }
+		const_iterator end() const { return codomainValues_.end(); }
+
+		reverse_iterator rbegin() { return reverse_iterator(end()); }
+		const_reverse_iterator rbegin() const { return const_reverse_iterator(end()); }
+
+		reverse_iterator rend() { return reverse_iterator(begin()); }
+		const_reverse_iterator rend() const { return const_reverse_iterator(begin()); }
+
+
+		const_iterator cbegin() const { return const_iterator(codomainValues_.begin()); }
+
+		const_iterator cend() const { return const_iterator(codomainValues_.end()); }
+
+		const_reverse_iterator crbegin() const { return const_reverse_iterator(end()); }
+
+		const_reverse_iterator crend() const { return const_reverse_iterator(begin()); }
+
+
+		zipped_iterator
+		begin_zip () {
+			return boost::make_zip_iterator (boost::make_tuple ( domainValues_.begin()
+														, codomainValues_.begin() ) );
 		}
+
+		zipped_iterator
+		end_zip () {
+			return boost::make_zip_iterator (boost::make_tuple ( domainValues_.end()
+														, codomainValues_.end() ) );
+		}
+
+		zipped_const_iterator
+		begin_zip () const {
+			return boost::make_zip_iterator (boost::make_tuple ( domainValues_.begin()
+														, codomainValues_.begin() ) );
+		}
+
+		zipped_const_iterator
+		end_zip () const {
+			return boost::make_zip_iterator (boost::make_tuple ( domainValues_.end()
+														, codomainValues_.end() ) );
+		}
+
+		//
+		//	Capacity
+		//
+
+		size_type size() const { return codomainValues_.size(); }
+
+		bool empty() const { return !size(); }
+
+
 		
+		//
+		//	Element access
+		//
+
+		reference front() { return codomainValues_.front(); }
+		const_reference front() const { return codomainValues_.front(); }
+
+		reference back() { return codomainValues_.back(); }
+		const_reference back() const { return codomainValues_.back(); }
+
+		reference operator[](size_type n) { return codomainValues_[n]; }
+		const_reference operator[](size_type n) const { return codomainValues_[n]; }
+
+		reference at(size_type n) { return codomainValues_.at(n); }
+		const_reference at(size_type n) const { return codomainValues_.at(n); }
+
+
+		pointer data() { return codomainValues_.data(); }
+		const_pointer data() const { return codomainValues_.data(); }	
+		//value_type* data() { return codomainValues_.data(); }
+		//const value_type* data() const { return codomainValues_.data(); }
+
+		
+		ContainerDomainT&
+		get_domain (void) { return domainValues_; }
+
+		ContainerCodomainT&
+		get_codomain (void) { return codomainValues_; }
+
 	
-	//private:
+		codomain_type operator() (const domain_type x)
+		{
+			if (x < domainValues_.front() || x > domainValues_.back()) {
+				throw std::domain_error("DiscreteSeries attempted to interpolate outside of the domain array!");
+			}
+			
+			return interpFn_(x);
+		}
+
+
+		//
+		//	Modifiers
+		//
+
+		//void swap()
+
+
+
+		//
+		//	Valarray compatability
+		//
+
+		value_type sum() const
+		{
+			return std::accumulate(codomainValues_.begin()+1, codomainValues_.end(), codomainValues_.front());
+		}
+
+		value_type min() const
+		{
+			return *boost::min_element(codomainValues_);
+		}
+
+		value_type max() const
+		{
+			return *boost::max_element(codomainValues_);
+		}
+
+		
+		//	Shift elements left (returns copy)
+		/*
+		T
+		shift(int n) const
+		{
+			T result(this->size());
+
+			if (n >= 0) {
+				if (n < this->size())
+					std::copy(codomainValues_.begin() + n, codomainValues_.end(), result.begin());
+			} else {
+				if (-n < this->size())
+					std::copy(codomainValues_.begin(), codomainValues_.end() + n, result.begin - n);
+			}
+
+			return result;
+		}
+		*/
+
+		//	Circularly shift elements left (returns copy)
+		/*
+		T
+		cshift(int m) const
+		{
+			T result(this->size());
+			
+			// Reduce m to an equivalent number in the range [0, size()).  We
+			// have to be careful with negative numbers, since the sign of a % b
+			// is unspecified when a < 0.
+			
+			long n(m);
+			
+			if (this->size() < numeric_limits<long>::max())
+				n %= long(this->size());
+			if (n < 0)
+				n += this->size();
+
+
+			std::copy(codomainValues_.begin(), codomainValues_.end(), result.begin() + (this->size() - n));
+			
+			std::copy(codomainValues_.begin() + n, codomainValues_.end(), result.begin());
+
+			return result;
+		}
+		*/
+		
+		DiscreteSeries apply(value_type fn(value_type)) const
+		{
+			DiscreteSeries result(this->size());
+			boost::transform(codomainValues_, result.begin(), fn);
+			return result;
+		}
+
+
+		DiscreteSeries apply(value_type fn(const value_type&)) const
+		{
+			DiscreteSeries result(this->size());
+			boost::transform(codomainValues_, result.begin(), fn);
+			return result;
+		}
+
+
+		//
+		//	Unary operators
+		//
+
+		DiscreteSeries operator+() const { return *this; }
+
+		DiscreteSeries operator-() const
+		{
+			DiscreteSeries result(*this);
+			boost::transform(codomainValues_, result.begin(), std::negate<value_type>());
+			return result;
+		}
+
+		DiscreteSeries operator~() const
+		{
+			DiscreteSeries result(*this);
+			boost::transform(codomainValues_, result.begin(), 
+			[](const value_type x) { return ~x; }
+			//std::bit_not<value_type>()
+			);
+			return result;
+		}
+
+		/*
+		DiscreteSeries<ContainerDomainT, >
+		operator!() const
+		{
+			DiscreteSeries<> result(*this);
+			boost::transform(codomainValues_, result.begin(), std::not_equal_to<value_type>());
+			return result;
+		}
+		*/
+
+		
+		//
+		//	Scalar computed assignment
+		//
+
+		#define DISCRETESERIES_MAKE_SCALAR_OPERATOR( _op_ )		\
+		DiscreteSeries& operator _op_ (const value_type& rhs) {	\
+			for (auto val : codomainValues_)					\
+				val _op_ rhs;									\
+			return *this;}
+
+		DISCRETESERIES_MAKE_SCALAR_OPERATOR( *= );
+		DISCRETESERIES_MAKE_SCALAR_OPERATOR(/=);
+		DISCRETESERIES_MAKE_SCALAR_OPERATOR(%=);
+		DISCRETESERIES_MAKE_SCALAR_OPERATOR(+=);
+		DISCRETESERIES_MAKE_SCALAR_OPERATOR(-=);
+		DISCRETESERIES_MAKE_SCALAR_OPERATOR(^=);
+		DISCRETESERIES_MAKE_SCALAR_OPERATOR(&=);
+		DISCRETESERIES_MAKE_SCALAR_OPERATOR(|=);
+		DISCRETESERIES_MAKE_SCALAR_OPERATOR(<<=);
+		DISCRETESERIES_MAKE_SCALAR_OPERATOR(>>=);
+
+		//
+		//	Array computed assignment
+		//
+
+		#define DISCRETESERIES_MAKE_ARRAY_OPERATOR( _op_ )		\
+		template <typename T>									\
+		DiscreteSeries& operator _op_ (const T& rhs) {			\
+			/*boost::transform(codomainValues_, rhs,			\
+				codomainValues_.begin(), _op_ );	*/			\
+			for (std::size_t i(0), N(codomainValues_.size()); i < N; ++i)	\
+				codomainValues_[i] _op_ rhs[i];					\
+			return *this;}
+
+		DISCRETESERIES_MAKE_ARRAY_OPERATOR(*=);
+		DISCRETESERIES_MAKE_ARRAY_OPERATOR(/=);
+		DISCRETESERIES_MAKE_ARRAY_OPERATOR(%=);
+		DISCRETESERIES_MAKE_ARRAY_OPERATOR(+=);
+		DISCRETESERIES_MAKE_ARRAY_OPERATOR(-=);
+		DISCRETESERIES_MAKE_ARRAY_OPERATOR(^=);
+		DISCRETESERIES_MAKE_ARRAY_OPERATOR(&=);
+		DISCRETESERIES_MAKE_ARRAY_OPERATOR(|=);
+		DISCRETESERIES_MAKE_ARRAY_OPERATOR(<<=);
+		DISCRETESERIES_MAKE_ARRAY_OPERATOR(>>=);
+
+		
+
+
+	};
+
+
+	//
+	//	Relational operators
+	//
+/*
+	template <...>
+	bool operator== (const & lhs, const & rhs)
+	{
+		//	Because boost::equal will use the .begin() and .end() on
+		//	both lhs and rhs, it doesn't matter whether they are
+		//	DiscreteSeries or any other STL container.
+		return lhs.size() == rhs.size() && boost::equal(lhs, rhs);
+	}
+
+	template <...>
+	bool operator!= (const & lhs, const & rhs)
+	{
+		return !(lhs == rhs);
+	}
+	
+	template <...>
+	bool operator< (const & lhs, const & rhs)
+	{
+		return boost::lexicographical_compare(lhs, rhs);
+	}
+
+	template <...>
+	bool operator<= (const & lhs, const & rhs)
+	{
+		return !(rhs < lhs);
+	}
+
+	template <...>
+	bool operator> (const & lhs, const & rhs)
+	{
+		return rhs < lhs;
+	}
+
+	template <...>
+	bool operator>= (const & lhs, const & rhs)
+	{
+		return !(lhs < rhs);
+	}
+
+
+
+	template <...>
+	void swap (& x, & y)
+	{
+
+	}
+*/
+
+
+	#define DISCRETESERIES_MAKE_MATH_FUNCTION(_math_fn_)	\
+	template<typename ...Ts>								\
+	inline DiscreteSeries<Ts...>							\
+	_math_fn_ (const DiscreteSeries<Ts...>& xs) {			\
+		using std:: _math_fn_ ;								\
+		DiscreteSeries<Ts...> result (xs.size());			\
+		boost::transform(xs, result.begin(), _math_fn_());	\
+		return result;}
+
+
+	DISCRETESERIES_MAKE_MATH_FUNCTION(abs);
+	DISCRETESERIES_MAKE_MATH_FUNCTION(acos);
+	DISCRETESERIES_MAKE_MATH_FUNCTION(asin);
+	DISCRETESERIES_MAKE_MATH_FUNCTION(atan);
+	DISCRETESERIES_MAKE_MATH_FUNCTION(atan2);
+	DISCRETESERIES_MAKE_MATH_FUNCTION(cos);
+	DISCRETESERIES_MAKE_MATH_FUNCTION(cosh);
+	DISCRETESERIES_MAKE_MATH_FUNCTION(exp);
+	DISCRETESERIES_MAKE_MATH_FUNCTION(log);
+	DISCRETESERIES_MAKE_MATH_FUNCTION(log10);
+	DISCRETESERIES_MAKE_MATH_FUNCTION(pow);
+	DISCRETESERIES_MAKE_MATH_FUNCTION(sin);
+	DISCRETESERIES_MAKE_MATH_FUNCTION(sinh);
+	DISCRETESERIES_MAKE_MATH_FUNCTION(sqrt);
+	DISCRETESERIES_MAKE_MATH_FUNCTION(tan);
+	DISCRETESERIES_MAKE_MATH_FUNCTION(tanh);
+
+	//	Note that the scalar atan2 functions are absent, as well
+	//	as the scalar pow() functions.
+
+/*
+	template<typename Type, unsigned N, unsigned Last>
+	struct tuple_printer {
+
+    	static void print(std::ostream& out, const Type& value) {
+    	    out << boost::get<N>(value) << ", ";
+    	    tuple_printer<Type, N + 1, Last>::print(out, value);
+		}
+	};
+
+	template<typename Type, unsigned N>
+	struct tuple_printer<Type, N, N> {
+
+		static void print(std::ostream& out, const Type& value) {
+			out << boost::get<N>(value);
+		}
 	};
 	
-	template< template<typename /*T1*/> class ContainerDomainT
-		, template<typename /*T2*/> class ContainerCodomainT = ContainerDomainT
-		, typename T1 = double
-		, typename T2 = T1
-		, typename InterpT = FakeInterpolator<double> //CubicInterpFunc<T1, T2>
-		>
-	//template<typename Domain, typename Range, typename AllocD, typename AllocR>
-	
-	bool operator== (const DiscreteSeries<ContainerDomainT, ContainerCodomainT, T1, T2, InterpT>& lhs, const DiscreteSeries<ContainerDomainT, ContainerCodomainT, T1, T2, InterpT>& rhs);
-	
-	//friend
-	template< template<typename /*T1*/> class ContainerDomainT
-		, template<typename /*T2*/> class ContainerCodomainT = ContainerDomainT
-		, typename T1 = double
-		, typename T2 = T1
-		, typename InterpT = FakeInterpolator<double> //CubicInterpFunc<T1, T2>
-		>
+	template<typename ...Ts>
+	::std::ostream&
+	operator<<  ( ::std::ostream& os
+				, const boost::tuple<Ts...>& rhs
+				//, const typename DiscreteSeries<Ts...>::zipped_const_iterator::value_type& rhs
+				//, const typename DiscreteSeries<Ts...>::zipped_const_iterator::value_type& rhs
+				)
+	{
+		//os << boost::get<0>(rhs) << "\t" << boost::get<1>(rhs) << std::endl;
+		//os << rhs. template get<0>() << "\t" << rhs. template get<1>() << std::endl;
+		
+		tuple_printer<boost::tuple<Ts...>, 0, sizeof...(Ts) - 1>::print(os, rhs);
 
-//	template<typename Domain, typename Range, typename AllocD, typename AllocR>
-	std::ostream& operator<< (std::ostream& os, const DiscreteSeries<ContainerDomainT, ContainerCodomainT, T1, T2, InterpT>& rhs) {
+		os << std::endl;
 		
-		os << "# Bin,\tTime" << ",\tValue" << std::endl;
-		
-		for (unsigned index (0); index < rhs.size(); ++index) {
-			os << index << ",\t" << rhs.DiracComb.at(index) << ",\t" << rhs.codomainValues_.at(index) << std::endl;
-		}
+		return os;
+	}
+*/
+
+
+	template<typename ...Ts>
+	std::ostream& operator<< (std::ostream& os, const DiscreteSeries<Ts...>& rhs)
+	{
 		
 		return os;
 	}
 	
-}
 
 
-#ifdef DISCRETESERIES_USE_BOOST_SERIALIZE
-	/*
-	namespace boost {
-		namespace serialization {
-			template <typename , >
-			struct version < PS::DiscreteSeries<T,U> >
-			{
 
-				typedef mpl::int_<1> type;
-				typedef mpl::integral_c_tag tag;
-				BOOST_STATIC_CONSTANT(unsigned int, value = version::type::value);
-			};
-		}
-	}
-	*/
-	//BOOST_CLASS_VERSION(PS::DiscreteSeries,0)
-#endif
-
+}	// namespace PS
 
 #endif
